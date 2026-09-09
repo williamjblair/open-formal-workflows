@@ -1,0 +1,30 @@
+name: Test shared contribution records
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Install the same toolkit as the board build
+        run: |
+          python3 - <<'PYTHON'
+          import re, subprocess
+          from pathlib import Path
+          workflow=Path('.github/workflows/board.yml').read_text()
+          source=re.search(r"git\+https://github.com/williamjblair/formal-conjectures\.git@[0-9a-f]{40}", workflow)
+          if not source: raise SystemExit('Missing exact toolkit pin')
+          subprocess.run(['uv','pip','install','--system',source[0]],check=True)
+          PYTHON
+      - run: python3 -m unittest test_shared_records test_ui_contract test_landing_contract
+      - run: bash -n sync.sh

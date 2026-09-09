@@ -213,13 +213,13 @@ query($endCursor: String) {
   repository(owner: "'"$OWNER"'", name: "'"$NAME"'") {
     pullRequests(states: OPEN, first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number commits(last: 1) { nodes { commit { committedDate } } } }
+      nodes { number headRefOid baseRefOid commits(last: 1) { nodes { commit { committedDate } } } }
     } }
 }' | jq '[.[].data.repository.pullRequests.nodes[]
-          | {(.number|tostring): (.commits.nodes[0].commit.committedDate // null)}] | add' \
+          | {(.number|tostring): {headDate: (.commits.nodes[0].commit.committedDate // null), headRefOid, baseRefOid, observedAt: (now | todateiso8601)}}] | add' \
   > head_dates.json
 jq -s '.[0] as $basics | .[1] as $dates
-       | $basics | with_entries(.value.headDate = (.value.headDate // $dates[.key]))' \
+       | $basics | with_entries(.value += ($dates[.key] // {}))' \
   "${QB_OUT:-$OLDPWD}/pr_basics.json" head_dates.json > pr_basics.merged.json \
   && mv pr_basics.merged.json "${QB_OUT:-$OLDPWD}/pr_basics.json"
 echo "==> filled headDate for $(jq '[.[] | select(.headDate)] | length' "${QB_OUT:-$OLDPWD}/pr_basics.json") of $(jq 'length' "${QB_OUT:-$OLDPWD}/pr_basics.json")"

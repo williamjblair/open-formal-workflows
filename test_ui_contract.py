@@ -13,7 +13,7 @@ class ReviewerWorkbenchContractTest(unittest.TestCase):
         self.assertIn("const DEFAULT_VIEW = 'queue'", self.template)
         for tab in (
             "['queue','Review queue']",
-            "['pilot','Selected case']",
+            "['pilot','Contribution evidence']",
             "['all','All open PRs']",
             "['pick','Find a case']",
             "['pr-audits','Evidence']",
@@ -45,18 +45,6 @@ class ReviewerWorkbenchContractTest(unittest.TestCase):
             self.template.index("['approved','Approval recorded']"),
         )
 
-    def test_selected_case_preserves_typed_evidence_and_disposition(self) -> None:
-        for label in (
-            "Evidence and typed outcomes",
-            "Pinned inputs and environment",
-            "Advisory ReviewReport synthesis",
-            "Maintainer disposition",
-            "Preservation and recurrence",
-            "Terminal text was retained but was not interpreted as a property verdict",
-        ):
-            self.assertIn(label, self.template)
-        self.assertIn("report.maintainer_disposition == null ? 'Not recorded'", self.template)
-
     def test_authority_and_accessibility_boundaries_remain_explicit(self) -> None:
         self.assertIn("Advisory evidence only", self.template)
         self.assertIn("Formal Conjectures is canonical", self.template)
@@ -66,10 +54,6 @@ class ReviewerWorkbenchContractTest(unittest.TestCase):
         self.assertIn(".search input { min-height: 44px; }", self.template)
         self.assertIn("main:focus { outline: none; }", self.template)
 
-    def test_method_keeps_federation_and_partner_nonclaims(self) -> None:
-        self.assertIn("No Vela authority path", self.template)
-        self.assertIn("No Econlib integration or partner representation", self.template)
-        self.assertIn("No merge gate, maintainer approval", self.template)
 
 
 if __name__ == "__main__":

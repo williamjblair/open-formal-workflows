@@ -40,7 +40,7 @@ Forensic, calm, and accountable. The interface should feel like a well-kept lab 
 - Authority is visible at every decision boundary: Formal Conjectures owns declarations, PR state, CI, and maintainer decisions.
 - Evidence stays inspectable: show exact source identities, environments, roots, hashes, and typed outcomes close to each claim.
 - Unknown is a first-class state: errors, unavailable evidence, staleness, and unfilled maintainer disposition remain distinct.
-- Reduce maintainer reading time: one selected calibration case, strong information hierarchy, progressive detail, and direct upstream links.
+- Reduce maintainer reading time: exact contribution records, strong information hierarchy, progressive detail, and direct upstream links.
 - Preserve provenance without creating a silo: the board is a disposable advisory projection over source-owned records.
 
 ## First-Screen Contract
@@ -54,13 +54,12 @@ inspectable artifacts.
 At `/workbench/`, the first screen is the information-rich **Review queue**. It
 immediately states what the table is for, places ready-for-review work first,
 and exposes familiar search, filters, grouped tables, CI state, approvals,
-queue age, and advisory audit evidence. The **Selected case** remains a
-first-class tab for the deeper pinned ReviewReport. Evidence, method, and
+queue age, and advisory audit evidence. The **Contribution evidence** tab consumes the shared toolkit reports. Evidence, method, and
 fidelity views support the workbench; they do not replace it.
 
 ## Program Boundaries
 
-- Vela Protocol 1 is the technical and evidentiary substrate.
+- The FC toolkit supplies live report validation; the Vela-related pilot remains historical context.
 - Formal Conjectures is the first source-owned deployment and remains canonical and decisive.
 - LeanEval and Comparator provide reproducible execution evidence with typed outcomes.
 - problems.science supplies public orientation and contribution context, not authority.

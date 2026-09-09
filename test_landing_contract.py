@@ -36,7 +36,7 @@ class PublicLandingContractTest(unittest.TestCase):
             "problems.science",
             "It is not a current integration or represented partner",
             "No maintainer endorsement or merge readiness is claimed",
-            "The selected case currently says “Not recorded.”",
+            "Maintainer decisions remain outside the generated evidence.",
         ):
             self.assertIn(statement, self.page)
 

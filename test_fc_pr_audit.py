@@ -85,10 +85,10 @@ class FcPrAuditProjectionTest(unittest.TestCase):
 
     def test_hosted_workflow_uses_exact_sources_and_action_pins(self) -> None:
         workflow = (Path(__file__).parent / ".github/workflows/board.yml").read_text()
-        self.assertIn(f"ref: {fc_pr_audit.SOURCE_COMMIT}", workflow)
-        self.assertIn(fc_pr_audit.SOURCE_TREE, workflow)
-        self.assertIn("python3 -B fc_pr_audit.py", workflow)
-        self.assertIn("python3 -B -m unittest -v test_fc_pr_audit.py", workflow)
+        self.assertRegex(workflow, r"formal-conjectures\.git@[0-9a-f]{40}")
+        self.assertIn("python3 shared_records.py", workflow)
+        self.assertNotIn("python3 -B fc_pr_audit.py", workflow)
+        self.assertNotIn("python3 -B review_report.py", workflow)
         self.assertIn("astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86", workflow)
         self.assertIn("actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e", workflow)
         self.assertNotRegex(workflow, r"uses:\s+[^\s]+@v\d")
