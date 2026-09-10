@@ -32,48 +32,8 @@ jobs:
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
-      - name: Check out the exact public FC audit packet
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: williamjblair/formal-conjectures
-          ref: 50fb575fadfc710f2da66cba1d3909429f9ba25e
-          path: .fc-pr-audit-source
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Validate and project the exact FC per-PR audit records
-        env:
-          FC_PR_AUDIT_SOURCE: ${{ github.workspace }}/.fc-pr-audit-source
-        run: |
-          test "$(git -C "$FC_PR_AUDIT_SOURCE" rev-parse HEAD)" = 50fb575fadfc710f2da66cba1d3909429f9ba25e
-          test "$(git -C "$FC_PR_AUDIT_SOURCE" rev-parse HEAD^{tree})" = 7213fa92375028e13797fc89f2cc300fc0568869
-          python3 -B fc_pr_audit.py --source "$FC_PR_AUDIT_SOURCE" --output pr_audits.json
-          python3 -B -m unittest -v test_fc_pr_audit.py
-
-      - name: Build the bounded #4884 pilot report
-        env:
-          FC_PR_AUDIT_SOURCE: ${{ github.workspace }}/.fc-pr-audit-source
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh pr view 4884 --repo google-deepmind/formal-conjectures \
-            --json number,headRefOid,state,reviewDecision,url \
-            | jq --arg observed_at "$observed_at" '{
-                number,
-                head_commit_oid: .headRefOid,
-                state,
-                review_decision: (.reviewDecision // null),
-                observed_at: $observed_at,
-                repository: "google-deepmind/formal-conjectures",
-                url
-              }' > pilot_github.json
-          python3 -B review_report.py "$FC_PR_AUDIT_SOURCE" \
-            conditional-erdos-427-4884 \
-            --github-json pilot_github.json \
-            --comparator-json pilot/comparator-outcome.json \
-            --output pilot_review_report.json
-          python3 -B -c 'import pilot; assert pilot.load_pilot_bundle()'
-          python3 -B -m unittest -v test_review_report.py test_pilot.py
+      - name: Install the shared FC contribution reader
+        run: uv pip install --system 'git+https://github.com/williamjblair/formal-conjectures.git@d09596defddba807a0aadc92c4023548161592be'
 
       # No audit feed by default. Set a VERDICTS_URL repository variable to
       # point at one and the fidelity column appears; without it the board
@@ -97,6 +57,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./sync.sh
 
+      - name: Read shared FC records and publish exact work context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FC_EVIDENCE_REPOSITORY: williamjblair/formal-conjectures
+          FC_EVIDENCE_BRANCH: codex/review-evidence-4899-20260909
+        run: python3 shared_records.py
+
       # generate.py reads snapshot.json, the issue list, the base branch's file
       # list and the audit feed, and writes the generated workbench below the
       # static public landing page. It exits non-zero if the snapshot is missing or empty, so a
@@ -106,6 +73,8 @@ jobs:
         run: |
           python3 generate.py
           mkdir -p _site/workbench
+          cp work.json _site/work.json
+          cp toolkit-evidence.json _site/evidence.json
           cp landing.html _site/index.html
           cp -R assets _site/assets
           cp workbench/index.html _site/workbench/index.html

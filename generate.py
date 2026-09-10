@@ -221,15 +221,16 @@ def load_pr_audits() -> dict[int, dict]:
 
 
 def load_pilot() -> dict | None:
-    """Load the validated one-case pilot projection when its report is present.
-
-    The scheduled build creates the report from the pinned audit source and a
-    fresh GitHub observation. Component byte drift or a filled maintainer
-    disposition fails the build instead of being rendered.
-    """
-    from pilot import load_pilot_bundle
-
-    return load_pilot_bundle()
+    """Read the shared toolkit projection; historical pilot files are not live inputs."""
+    path=HERE/'toolkit-evidence.json'
+    if not path.is_file():return None
+    from conjectures import report as rr
+    value=rr.read_json(path)
+    if value.get('schema_version')!='fc.contribution-context.v1' or value.get('authority_effect')!='none':
+        raise ValueError('Invalid shared contribution context')
+    if any(run.get('validation')!='validated_bundle' for run in value.get('runs',[])):
+        raise ValueError('Unvalidated contribution evidence')
+    return value
 
 
 # --- classification -------------------------------------------------------
@@ -437,7 +438,7 @@ def main() -> None:
     snap = load_snapshot()
     basics = load_basics()
     verdicts = load_verdicts()
-    pr_audits = load_pr_audits()
+    pr_audits = {}  # Old audit projections remain historical; toolkit records own the live path.
     pilot_bundle = load_pilot()
     approved = set(snap.get("lists", {}).get("dashboards", {}).get("Approved") or [])
     now = datetime.now(timezone.utc)
@@ -447,6 +448,10 @@ def main() -> None:
                             approved, now,
                             on_main)
                for num, pr in snap["prs"].items()]
+    for record in records:
+        record['contributionEvidence']=[run for run in (pilot_bundle or {}).get('runs',[])
+            if run.get('target',{}).get('pr')==record['n'] and
+               run.get('target',{}).get('repository') in (REPO,'https://github.com/'+REPO)]
     records.sort(key=lambda r: -(r["waiting"] if r["waiting"] is not None else r["age"]))
     joined_pr_audits = [record for record in records if record["prAudit"] is not None]
     meta = {
@@ -880,7 +885,7 @@ const FACETS = [
 ];
 
 const DEFAULT_VIEW = 'queue';
-const TAB_SPECS = [['queue','Review queue'],['pilot','Selected case'],['all','All open PRs'],['pick','Find a case'],['fidelity','Fidelity'],['pr-audits','Evidence'],['method','Method']]
+const TAB_SPECS = [['queue','Review queue'],['pilot','Contribution evidence'],['all','All open PRs'],['pick','Find a case'],['fidelity','Fidelity'],['pr-audits','Evidence'],['method','Method']]
   .filter(v => (v[0] !== 'pilot' && v[0] !== 'method' || META.hasPilot)
             && (v[0] !== 'fidelity' || META.hasAudit)
             && (v[0] !== 'pick' || META.hasIssues)
@@ -928,6 +933,7 @@ function flagsHtml(r){ let s = '';
     + r.who.join(', ') + '">' + esc(r.who[0]) + (r.who.length > 1 ? ' +' + (r.who.length - 1) : '') + '</span>';
   if (r.onMain) s += '<span class="flag flag--onmain" title="Every file this PR adds is already on the base branch, so the work may have landed another way. A prompt to check, not a verdict: the data cannot tell an added file from one that was only appended to.">already on main?</span>';
   if (r.staleWhy) s += '<span class="flag flag--rebase" title="'+esc(r.staleWhy)+'">needs rebase</span>';
+  if ((r.contributionEvidence || []).length) s += '<a class="flag" href="#view=pilot">'+r.contributionEvidence.length+' evidence records</a>';
   if (r.ciPending) s += '<span class="flag flag--ci" title="CI has not run yet (often waiting on a maintainer to approve the workflow)">CI pending</span>';
   if (r.conflict) s += '<span class="flag flag--conflict" title="Merge conflict with the base branch">conflict</span>';
   return s; }
@@ -1056,69 +1062,31 @@ function fact(label, value){ return '<div class="fact"><dt>'+esc(label)+'</dt><d
 function hash(value){ return '<span class="hash">'+esc(value)+'</span>'; }
 
 function renderPilot(){
-  if (!PILOT) return emptyState('The bounded pilot report is not present in this build.');
-  const report = PILOT.review_report, audit = report.immutable_audit;
-  const current = report.current_github_observation, typed = report.comparator_evidence.typed_outcome;
-  const links = PILOT.links, tools = PILOT.lean_eval.tool_pins;
-  const fresh = current && current.freshness === 'current';
-  const metadata = audit.checks[0];
-  const rows = evidenceRow(
-      'Current PR identity', '<a href="'+links.pull_request+'">GitHub observation</a>',
-      current ? 'Observed '+current.observed_at+' at '+current.head_commit_oid : 'No current observation',
-      current ? current.freshness : 'not observed')
-    + evidenceRow('Conditional proof metadata', '<a href="'+links.audit_packet+'">Frozen audit core</a>',
-      metadata.property+'; retained manual metadata review', metadata.outcome)
-    + evidenceRow('LeanEval-shaped workspace', '<a href="'+links.lean_eval+'">Pinned LeanEval interface</a>',
-      'Derived multi-file profile; preparation bytes and workspace files are content-addressed', 'derived')
-    + evidenceRow('Comparator invocation', '<a href="'+links.comparator_execution+'">Pinned execution source</a>',
-      typed.invocation.reason+'; exit code '+typed.invocation.exit_code, typed.invocation.outcome)
-    + evidenceRow('Structured result parse', 'Typed Comparator adapter',
-      typed.result_parse.reason, typed.result_parse.outcome)
-    + evidenceRow('Permitted-axiom policy', 'Typed Comparator adapter',
-      'Terminal text was retained but was not interpreted as a property verdict', typed.policy_result.outcome);
-  const nonclaims = report.nonclaims.map(item => '<li>'+esc(humanize(item.replace(/^not_/, '')))+'</li>').join('');
-  const disposition = report.maintainer_disposition == null ? 'Not recorded' : humanize(report.maintainer_disposition);
-  const advisory = audit.advisory_synthesis.advisory;
-  return '<article class="pilot">'
-    +'<header class="pilot-head"><p class="eyebrow">Selected calibration case · advisory pilot</p>'
-    +'<h2><a href="'+links.pull_request+'">PR #'+PILOT.case.number+'</a> · '+esc(PILOT.case.declaration)+'</h2>'
-    +'<p class="pilot-summary">'+esc(PILOT.case.title)+'. '+esc(PILOT.case.selection)+'. The report preserves the error as an error and leaves the maintainer decision empty.</p>'
-    +'<div class="state-line"><span class="state '+(fresh?'state--current':'state--stale')+'">'+(fresh?'Evidence head current':'Evidence stale')+'</span>'
-    +'<span class="state state--open">'+esc(current ? current.state : 'not observed')+'</span>'
-    +'<span class="state">'+esc(current && current.review_decision ? humanize(current.review_decision) : 'no review decision')+'</span>'
-    +'<span class="state">Advisory: '+esc(humanize(advisory))+'</span></div>'
-    +'<nav class="pilot-links" aria-label="Case evidence"><a href="'+links.source_file+'">Exact source</a><a href="'+links.linked_proof+'">Pinned linked proof</a><a href="'+links.audit_packet+'">Audit packet</a><a href="'+links.historical_run+'">Historical run</a><a href="'+links.protocol+'">Loop protocol</a></nav></header>'
-    +'<section class="pilot-section" aria-labelledby="evidence-heading"><div class="pilot-section-h"><h3 id="evidence-heading">Evidence and typed outcomes</h3><p>Different sources remain different claims</p></div>'+rows+'</section>'
-    +'<section class="pilot-section" aria-labelledby="inputs-heading"><div class="pilot-section-h"><h3 id="inputs-heading">Pinned inputs and environment</h3><p>Exact enough to revisit, not a promise of reproducibility</p></div><div class="pilot-split"><dl class="fact-list">'
-    +fact('PR head','<a href="'+links.head+'">'+hash(audit.head.commit_oid)+'</a>')
-    +fact('Audit core',hash(audit.core.root)+'<br>'+hash(audit.core.sha256))
-    +fact('Audit observation',hash(audit.observation.root)+'<br>'+hash(audit.observation.sha256))
-    +fact('Linked proof input',hash(PILOT.preparation.input_sha256))
-    +fact('Calibration source','<a href="'+links.calibration_source+'">'+hash(PILOT.preparation.source_head)+'</a>')
-    +fact('Workspace source','<a href="'+links.workspace_source+'">'+hash(PILOT.preparation.formal_conjectures_revision)+'</a>')
-    +fact('Mathlib',hash(PILOT.preparation.mathlib_revision))
-    +fact('LeanEval interface','<a href="'+links.lean_eval+'">'+hash(tools.lean_eval_interface_commit)+'</a>')
-    +fact('Comparator interface','<a href="'+links.comparator_interface+'">'+hash(tools.comparator_interface_commit)+'</a>')
-    +fact('Comparator execution','<a href="'+links.comparator_execution+'">'+hash(tools.comparator_execution_commit)+'</a>')
-    +fact('Toolchain',esc(tools.lean_toolchain))
-    +fact('Execution image',hash(PILOT.execution.image_id)+'<br>network: '+esc(PILOT.execution.network))
-    +fact('Manifest bindings','outcome '+hash(PILOT.execution.outcome_sha256)+'<br>preparation '+hash(PILOT.execution.preparation_sha256))
-    +'</dl><div><div class="disposition"><p class="eyebrow">Advisory ReviewReport synthesis</p><strong class="advisory-value">'+esc(humanize(advisory))+'</strong><p>Reader-facing synthesis over the immutable audit. It has no authority effect.</p><div class="disposition-rule"></div><p class="eyebrow">Maintainer disposition</p><strong>'+esc(disposition)+'</strong><p>Only a Formal Conjectures maintainer can supply this outside the generated report.</p></div><ul class="nonclaims">'+nonclaims+'</ul></div></div></section>'
-    +'<section class="pilot-section" aria-labelledby="recurrence-heading"><div class="pilot-section-h"><h3 id="recurrence-heading">Preservation and recurrence</h3><p>Scheduled observation, immutable evidence</p></div>'
-    +'<div class="recurrence">'+outcome(current ? current.freshness : 'not observed')+'<p>'+(fresh?'The live PR head still matches the frozen audit head.':'The live PR head does not match the frozen audit head. Existing findings were not reinterpreted.')+'<small>'+(current ? 'Observed '+esc(current.observed_at)+'. ' : '')+'The scheduled build regenerates this GitHub observation and validates retained report, preparation, outcome, and execution-manifest bytes.</small></p></div></section>'
-    +'</article>';
+  if (!PILOT) return emptyState('Contribution evidence is not configured.');
+  const intro = '<p>Validated toolkit records. Artifact integrity does not establish mathematical correctness or maintainer acceptance.</p>';
+  if (!PILOT.runs.length) return intro + emptyState(PILOT.message || (PILOT.status === 'no_records' ? 'No published records.' : 'Evidence: '+PILOT.status));
+  return intro + PILOT.runs.map(run => {
+    const summary=run.summary, target=run.target || {};
+    const url=run.url && /^https:\/\/github\.com\//.test(run.url) ? run.url : null;
+    const findings=(summary.findings || []).map(f => '<li>'+esc(f.file)+':'+esc(String(f.line))+' — '+esc(f.message)+'</li>').join('');
+    return '<article class="pilot"><header class="pilot-head"><h2>'+esc(target.declaration || 'PR #'+target.pr)+'</h2>'
+      +'<p>'+esc(summary.semantic_verdict || run.outcome)+' · '+esc(run.applicability)+' · '+esc(run.producer)+'</p></header>'
+      +'<dl class="fact-list">'+fact('Run',esc(run.id))+fact('Reviewed revision',hash(target.head || target.commit || 'unknown'))
+      +fact('Observed',esc(run.applicability_observed_at || 'not observed'))
+      +fact('Changes',esc((run.changes || []).join(', ') || 'none observed'))+'</dl>'
+      +(findings ? '<ul>'+findings+'</ul>' : '')
+      +'<p>Coverage gaps: '+esc((summary.gaps || []).join('; ') || 'none reported')+'</p>'
+      +(run.kind === 'verify' ? '<p>Policy: '+esc(summary.policy_outcome || (['pass','rejected'].includes(summary.comparator?.outcome) ? summary.comparator.outcome : 'not_evaluated'))+'</p>' : '')
+      +(url ? '<p><a href="'+esc(url)+'">Inspect immutable evidence</a></p>' : '')
+      +(summary.reviewer ? '<p>Reviewer: '+esc(summary.reviewer)+'</p>' : '')
+      +(summary.reviewer_attributions?.record?.reviewers || []).map(reviewer => '<p>Attributed reviewer: '+esc(reviewer.name)+' ('+esc(reviewer.kind)+', self-reported). Shared context: '+esc(reviewer.shared_dependencies.join(', ') || 'none reported')+'</p>').join('')
+      +((run.fc_pages || []).length ? '<p>'+run.fc_pages.map(page => '<a href="'+esc(page.url)+'">'+esc(page.path)+'</a>').join(' · ')+'</p>' : '<p><a href="__FC_SITE__">Browse FC statements</a></p>')
+      +'<pre><code>'+esc(target.declaration ? "conjectures show '"+target.declaration.replaceAll("'", "'\\''")+"'" : 'conjectures review --pr '+target.pr)+'</code></pre></article>';
+  }).join('');
 }
 
 function renderMethod(){
-  if (!PILOT) return emptyState('The pilot method is not configured in this build.');
-  return '<article><p class="eyebrow">Pilot protocol</p><h2>Review, verification, and preservation loop</h2>'
-    +'<p class="method-intro">The board follows <a href="'+PILOT.links.protocol+'">Formal Conjectures issue #4394</a>. It is a bounded reading surface for one calibration case, designed to reduce maintainer review effort without creating a second authority or evidence silo.</p>'
-    +'<ol class="loop"><li><div><h3>Canonical metadata</h3><p>Start from the exact Formal Conjectures PR head, declaration, proof link, and conditions. Formal Conjectures remains canonical for declarations and repository policy.</p></div></li>'
-    +'<li><div><h3>Consumers and checks</h3><p>Bind LeanEval-shaped workspace inputs and Comparator execution to exact source, file, tool, and environment identities. Record typed pass, fail, error, unavailable, and not-evaluated states without reading verdicts from terminal prose.</p></div></li>'
-    +'<li><div><h3>Advisory reviewer report</h3><p>Collect checked facts, limitations, and current GitHub state in a ReviewReport. Advisory synthesis stays separate from maintainer disposition. An independent non-author pilot remains an external gate.</p></div></li>'
-    +'<li><div><h3>Preservation and recurrence</h3><p>Retain small content-addressed reports, manifests, and logs. Recheck the live PR head, expose stale evidence, and never silently change policy when tools or sources move.</p></div></li></ol>'
-    +'<div class="method-grid"><section><h3>What would count as pilot success</h3><ul><li>A non-author can reproduce the report finding from the exact references.</li><li>The report reduces, rather than adds to, maintainer reading time.</li><li>Head drift becomes visibly stale before evidence is reused.</li><li>Execution errors stay distinct from failed proof properties.</li><li>The calibration record remains inspectable after transient workspaces are removed.</li></ul></section>'
-    +'<section><h3>Non-goals</h3><ul><li>No merge gate, maintainer approval, or claim of mathematical truth.</li><li>No generic AI platform, centralized governance product, or new proof registry.</li><li>No Vela authority path. A later problems.science projection may only link to FC evidence.</li><li>No Econlib integration or partner representation.</li><li>No claim of reviewer buy-in, upstream adoption, or external validation.</li></ul></section></div></article>';
+  return '<article><h2>Review, verification, and preservation</h2><p>The FC toolkit validates and assembles evidence. This board displays its records alongside queueboard timing and GitHub state.</p><p>Results retain exact inputs and producer attribution. Current observations can make a result historical; they never reinterpret it as a different mathematical outcome. Maintainers decide acceptance.</p><p><a href="https://github.com/google-deepmind/formal-conjectures/issues/4394">Roadmap</a> · <a href="https://github.com/williamjblair/open-formal-workflows/tree/3300a105864c34ed97ad30a182496b3d570e0039/pilot">Historical #4884 evidence</a></p></article>';
 }
 
 function statHtml(v, l, cls, facet){
